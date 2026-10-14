@@ -67,6 +67,17 @@
   .feed .ic { width: 26px; text-align: center; font-size: 16px; flex: none; }
   .feed .tx { flex: 1; min-width: 0; }
   .feed .tm { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .art { display: inline-block; background: #0c1520; border: 1px solid var(--line); border-radius: 7px; padding: 1px 7px; font-size: 11px; color: var(--text); margin: 2px 3px 0 0; white-space: nowrap; }
+  .art i { color: var(--muted); font-style: normal; }
+  .arts { margin-top: 5px; }
+  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--good); font-weight: 600; white-space: nowrap; }
+  .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 0 rgba(94,224,160,.6); animation: pulse 1.8s infinite; }
+  .recent { color: var(--warn); white-space: nowrap; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(94,224,160,0); } 100% { box-shadow: 0 0 0 0 rgba(94,224,160,0); } }
+  .pcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
+  .pcard { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; }
+  .pcard:hover { border-color: var(--accent2); }
+  .pcard .meta { margin-top: 8px; color: var(--muted); font-size: 12px; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chart-box { position: relative; height: 280px; }
   .chart-box.short { height: 220px; }
@@ -132,6 +143,7 @@
     <nav class="tabs" id="tabs">
       <button data-tab="overview">Overview</button>
       <button data-tab="users">Users</button>
+      <button data-tab="projects">Projects</button>
       <button data-tab="patterns">Patterns</button>
       <button data-tab="content">Content</button>
       <button data-tab="emails">Emails</button>
@@ -168,6 +180,16 @@
           <div class="row"><input id="userSearch" type="search" placeholder="Search email or id"><div class="chips" id="userFilters"></div></div>
         </div>
         <div class="tw"><table><thead id="usersHead"></thead><tbody id="usersBody"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="tab-projects" class="hide">
+      <div class="panel">
+        <div class="head">
+          <div><h3>What people are running</h3><h2 id="projectsTitle">Projects</h2><div class="sub">Each card is one project: who has it open, and all the artwork in it. Click for that person's full activity.</div></div>
+          <div class="row"><input id="projectSearch" type="search" placeholder="Search person or artwork"><div class="chips" id="projectFilters"></div></div>
+        </div>
+        <div class="pcards" id="projectCards"></div>
       </div>
     </section>
 
@@ -284,7 +306,7 @@ const api = {
   async core() {
     if (DEMO) return loadDemo();
     const rpc = (name, args) => sb.rpc(name, args).then(({ data, error }) => { if (error) throw error; return data; });
-    const [overview, users, daily, heat, cohorts, lengths, artwork, combos, projects, userWeeks, events, donations, messages, emails] = await Promise.all([
+    const [overview, users, daily, heat, cohorts, lengths, artwork, combos, projects, userWeeks, events, projectEvents, donations, messages, emails] = await Promise.all([
       rpc("dash_overview"),
       this.pageAll(() => sb.from("user_stats_v").select("*").order("last_seen", { ascending: false })),
       rpc("dash_daily", { p_days: 90 }),
@@ -296,11 +318,12 @@ const api = {
       rpc("dash_projects"),
       this.pageAll(() => sb.rpc("dash_user_weeks", { p_weeks: 8 })),
       sb.from("events_v").select("id,created_at,uid,email,event_type,meta,props,platform,app_version").not("event_type", "in", "(SESSION_HEARTBEAT,APP_BACKGROUNDED,APP_CLOSED)").order("created_at", { ascending: false }).limit(600).then(r => { if (r.error) throw r.error; return r.data; }),
+      sb.from("events_v").select("id,created_at,uid,email,meta,props").eq("event_type", "PROJECT_OPENED").order("created_at", { ascending: false }).limit(500).then(r => { if (r.error) throw r.error; return r.data; }),
       sb.from("events_v").select("id,created_at,uid,email,meta").eq("event_type", "DONATE").order("created_at", { ascending: false }).limit(200).then(r => { if (r.error) throw r.error; return r.data; }),
       this.pageAll(() => sb.from("messages").select("*").order("created_at", { ascending: false })),
       this.pageAll(() => sb.from("email_list_v").select("*").order("added_at", { ascending: false })),
     ]);
-    return { overview, users, daily, heat, cohorts, lengths, artwork, combos, projects, userWeeks, events, donations, messages, emails, sessions: null };
+    return { overview, users, daily, heat, cohorts, lengths, artwork, combos, projects, userWeeks, events, projectEvents, donations, messages, emails, sessions: null };
   },
   async userDetail(uid) {
     if (DEMO) return {
@@ -331,8 +354,16 @@ async function loadDemo() {
   const shiftDay = s => new Date(new Date(s + "T00:00:00Z").getTime() + ms).toISOString().slice(0, 10);
   const fix = (rows, iso = [], wall = [], day = []) => rows.forEach(r => { iso.forEach(k => r[k] = shiftIso(r[k])); wall.forEach(k => r[k] = shiftWall(r[k])); day.forEach(k => r[k] = shiftDay(r[k])); });
   fix(d.users, ["first_seen", "last_seen"]);
+  fix(d.projectEvents, ["created_at"]);
   fix(d.sessions, ["started_at", "ended_at"], ["local_start"]);
   fix(d.events, ["created_at"]); fix(d.donations, ["created_at"]); fix(d.messages, ["created_at"]); fix(d.emails, ["added_at", "last_seen"]);
+  // Make a couple of people look like they are using it right now, so the "active now" bits can be seen.
+  const nowIso = m => new Date(Date.now() - m * 60000).toISOString();
+  [[0, 1.5, "SESSION_HEARTBEAT"], [3, 4, "SESSION_HEARTBEAT"]].forEach(([i, m, t]) => {
+    const u = d.users[i]; if (!u) return; u.last_seen = nowIso(m); u.last_event_type = t;
+    const prev = d.projectEvents.find(e => e.uid === u.uid);
+    if (prev) { const e = Object.assign({}, prev, { id: 9e6 + i, created_at: nowIso(m + 6) }); d.projectEvents.unshift(e); d.events.unshift(Object.assign({}, e, { event_type: "PROJECT_OPENED", platform: u.platform, app_version: u.app_version })); }
+  });
   fix(d.daily, [], [], ["day"]); fix(d.cohorts, [], [], ["cohort"]); fix(d.userWeeks, [], [], ["wk"]);
   return d;
 }
@@ -376,19 +407,50 @@ const modePills = u => [u.cast_minutes > 0 ? "AirPlay cast" : "", u.mirror_minut
 
 const EVENT_TEXT = {
   SESSION_START: ["📱", () => "opened the app"],
-  PROJECT_OPENED: ["📂", e => "opened a project" + (e.meta ? " with " + e.meta.split(",").map(s => s.trim()).filter(Boolean).slice(0, 3).join(", ") : "") + (e.props && e.props.grids ? ` (${e.props.grids} grid${e.props.grids > 1 ? "s" : ""})` : "")],
-  NEW_PROJECT: ["✨", e => "started a new project" + (e.meta ? " with " + e.meta : "")],
+  PROJECT_OPENED: ["📂", e => "opened a project" + (e.props && e.props.grids ? ` with ${e.props.grids} grid${e.props.grids > 1 ? "s" : ""}` : "")],
+  NEW_PROJECT: ["✨", e => "started a new project"],
   ARTWORK_DOWNLOADED: ["⬇️", e => "downloaded " + (e.meta || "artwork")],
   CAST_STARTED: ["📡", () => "started casting"],
   CAST_STOPPED: ["📡", e => "stopped casting after " + mins((+e.meta || 0) / 60)],
   DONATE: ["💛", e => "bought " + (e.meta || "a support tier")],
 };
-function eventLine(e) { const [icon, f] = EVENT_TEXT[e.event_type] || ["•", ev => ev.event_type.toLowerCase().replace(/_/g, " ")]; return { icon, text: f(e) }; }
+// Whoever's app reported in the last few minutes (the heartbeat is every 5) and was not put away is using it now.
+function presence(u) {
+  const age = (Date.now() - new Date(u.last_seen).getTime()) / 60000;
+  if (u.last_event_type !== "APP_BACKGROUNDED" && age < 7) return { live: true, html: `<span class="live">Active now</span>` };
+  if (age < 90) return { live: false, html: `<span class="recent">${esc(ago(u.last_seen))}</span>` };
+  return { live: false, html: esc(ago(u.last_seen)) };
+}
+// "Aurora ×3" chips for a comma separated artwork list (one entry per grid), in order of first appearance.
+function artChips(meta, max = 16) {
+  const counts = new Map();
+  String(meta || "").split(",").map(x => x.trim()).filter(Boolean).forEach(n => counts.set(n, (counts.get(n) || 0) + 1));
+  const all = [...counts.entries()];
+  return all.slice(0, max).map(([n, c]) => `<span class="art">${esc(n)}${c > 1 ? ` <i>×${c}</i>` : ""}</span>`).join("") + (all.length > max ? `<span class="art"><i>+${all.length - max} more</i></span>` : "");
+}
+// One entry per project a person has opened: the project id the app sends, or (older events) the set of artwork.
+function groupProjects(events) {
+  const map = new Map();
+  events.forEach(e => {
+    const key = e.uid + "|" + ((e.props && e.props.project) || "art:" + String(e.meta || "").split(",").map(s => s.trim()).sort().join(","));
+    let g = map.get(key);
+    if (!g) { g = { uid: e.uid, latest: e, first: e.created_at, opens: 0 }; map.set(key, g); }
+    g.opens++;
+    if (e.created_at > g.latest.created_at) g.latest = e;
+    if (e.created_at < g.first) g.first = e.created_at;
+  });
+  return [...map.values()].sort((a, b) => b.latest.created_at.localeCompare(a.latest.created_at));
+}
+function projectFacts(p) {
+  const x = p.latest.props || {};
+  return [x.grids ? `${x.grids} grid${x.grids > 1 ? "s" : ""}` : "", x.masks ? `${x.masks} mask${x.masks > 1 ? "s" : ""}` : "", x.warp ? "warp paint" : "", x.own_media ? `${x.own_media} own file${x.own_media > 1 ? "s" : ""}` : "", `opened ${p.opens}×`].filter(Boolean).join(" · ");
+}
+function eventLine(e) { const [icon, f] = EVENT_TEXT[e.event_type] || ["•", ev => ev.event_type.toLowerCase().replace(/_/g, " ")]; return { icon, text: f(e), extra: e.event_type === "PROJECT_OPENED" || e.event_type === "NEW_PROJECT" ? `<div class="arts">${artChips(e.meta)}</div>` : "" }; }
 
 /* ============================================================================================================
    State and rendering
    ============================================================================================================ */
-const state = { feedFilter: "all", emailOf: {}, data: null, tab: "overview", metric: "active_users", range: 30, filter: "all", sortKey: "last_seen", sortAsc: false, search: "", msgFilter: "new", showAllGigs: false, charts: {} };
+const state = { projectFilter: "week", projectSearch: "", feedFilter: "all", emailOf: {}, data: null, tab: "overview", metric: "active_users", range: 30, filter: "all", sortKey: "last_seen", sortAsc: false, search: "", msgFilter: "new", showAllGigs: false, charts: {} };
 const METRICS = {
   active_users: ["Active users", "Active users per day", r => r.active_users],
   sessions: ["Sessions", "Sessions per day", r => r.sessions],
@@ -413,7 +475,9 @@ function drawChart(id, cfgObj) {
 function renderKpis() {
   const o = state.data.overview, u = state.data.users;
   const retained = o.total_users ? Math.round(100 * o.returning_users / o.total_users) : 0;
+  const live = u.filter(x => presence(x).live);
   const k = [
+    ["Active now", num(live.length), live.length ? live.slice(0, 3).map(x => who(x.uid).name).join(", ") + (live.length > 3 ? " …" : "") : "nobody right now"],
     ["Total users", num(o.total_users), `${num(o.new_7d)} new this week`],
     ["Active this week", num(o.active_7d), `${num(o.active_30d)} in the last 30 days`],
     ["Come back", retained + "%", `${num(o.returning_users)} used it on 2+ days`],
@@ -459,7 +523,7 @@ function renderFeed() {
     const dl = dayLabel(e.created_at);
     if (dl !== last) { html += `<div class="day">${esc(dl)}</div>`; last = dl; }
     const l = eventLine(e); const w = who(e.uid);
-    html += `<div class="it" data-uid="${esc(e.uid)}"><div class="ic">${l.icon}</div><div class="tx"><b>${esc(w.name)}</b>${w.email && w.short ? ` <span class="sub">ID ${esc(w.short)}</span>` : ""} ${esc(l.text)}</div><div class="tm" title="${esc(new Date(e.created_at).toLocaleString())}">${esc(ago(e.created_at))}</div></div>`;
+    html += `<div class="it" data-uid="${esc(e.uid)}"><div class="ic">${l.icon}</div><div class="tx"><b>${esc(w.name)}</b>${w.email && w.short ? ` <span class="sub">ID ${esc(w.short)}</span>` : ""} ${esc(l.text)}${l.extra}</div><div class="tm" title="${esc(new Date(e.created_at).toLocaleString())}">${esc(ago(e.created_at))}</div></div>`;
   });
   $("feed").innerHTML = html || `<div class="empty">No activity yet.</div>`;
   $("feed").querySelectorAll(".it").forEach(n => n.onclick = () => openUser(n.dataset.uid));
@@ -468,7 +532,7 @@ function renderFeed() {
 function renderRecentUsers() {
   const rows = state.data.users.slice(0, 12);
   $("recentUsers").innerHTML = rows.map(u => `<tr class="click" data-uid="${esc(u.uid)}">
-    <td>${whoCell(u.uid, (u.platform || "") + (u.app_version ? " · v" + u.app_version : ""))}</td><td>${pill(u.status)}</td><td>${esc(ago(u.last_seen))}</td>
+    <td>${whoCell(u.uid, (u.platform || "") + (u.app_version ? " · v" + u.app_version : ""))}</td><td>${pill(u.status)}</td><td>${presence(u).html}</td>
     <td class="num">${num(u.sessions)}</td><td class="num">${mins(u.avg_session_min)}</td><td class="num">${hours(u.total_minutes)}</td><td>${esc(usually(u))}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No users yet.</td></tr>`;
   bindRows("recentUsers");
 }
@@ -492,10 +556,34 @@ function renderUsers() {
   $("usersHead").innerHTML = "<tr>" + USER_COLS.map(([key, label, n]) => `<th class="sort ${n ? "num" : ""}" data-k="${key}">${esc(label)}${key === state.sortKey ? (state.sortAsc ? " ▲" : " ▼") : ""}</th>`).join("") + "</tr>";
   $("usersHead").querySelectorAll("th").forEach(th => th.onclick = () => { if (state.sortKey === th.dataset.k) state.sortAsc = !state.sortAsc; else { state.sortKey = th.dataset.k; state.sortAsc = false; } renderUsers(); });
   $("usersBody").innerHTML = rows.slice(0, 500).map(u => `<tr class="click" data-uid="${esc(u.uid)}">
-    <td>${whoCell(u.uid, u.donations ? "supporter" : "")}</td><td>${pill(u.status)}</td><td>${esc(ago(u.last_seen))}</td><td>${esc(new Date(u.first_seen).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</td>
+    <td>${whoCell(u.uid, u.donations ? "supporter" : "")}</td><td>${pill(u.status)}</td><td>${presence(u).html}</td><td>${esc(new Date(u.first_seen).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</td>
     <td class="num">${num(u.sessions)}</td><td class="num">${num(u.active_days_30)}</td><td class="num">${mins(u.avg_session_min)}</td><td class="num">${hours(u.total_minutes)}</td><td class="num">${u.projection_minutes ? hours(u.projection_minutes) : "-"}</td>
     <td style="white-space:nowrap">${esc(usually(u))}</td><td class="num">${num(u.project_opens)}</td><td>${esc(u.favorite_artwork || "")}</td></tr>`).join("") || `<tr><td colspan="12" class="empty">Nobody matches.</td></tr>`;
   bindRows("usersBody");
+}
+
+function renderProjects() {
+  const users = Object.fromEntries(state.data.users.map(u => [u.uid, u]));
+  const all = groupProjects(state.data.projectEvents);
+  const cutoff = { now: 7 * 60000, today: DAY, week: 7 * DAY, all: Infinity };
+  const filters = [["now", "Active now"], ["today", "Last 24 h"], ["week", "This week"], ["all", "All"]];
+  chip($("projectFilters"), filters, state.projectFilter, k => { state.projectFilter = k; renderProjects(); });
+  const q = state.projectSearch.toLowerCase();
+  const rows = all.filter(p => {
+    const u = users[p.uid];
+    if (state.projectFilter === "now") { if (!u || !presence(u).live) return false; }
+    else if (Date.now() - new Date(p.latest.created_at).getTime() > cutoff[state.projectFilter]) return false;
+    if (!q) return true;
+    return p.uid.toLowerCase().includes(q) || (state.emailOf[p.uid] || "").includes(q) || String(p.latest.meta || "").toLowerCase().includes(q);
+  });
+  $("projectsTitle").textContent = `Projects (${num(rows.length)})`;
+  $("projectCards").innerHTML = rows.slice(0, 120).map(p => {
+    const u = users[p.uid]; const x = p.latest.props || {};
+    return `<div class="pcard" data-uid="${esc(p.uid)}"><div class="row" style="justify-content:space-between;align-items:flex-start">${whoCell(p.uid, u ? (u.platform || "") : "")}<div style="text-align:right">${u ? presence(u).html : ""}<div class="sub">opened ${esc(ago(p.latest.created_at))}</div></div></div>
+      <div class="meta">${esc(projectFacts(p))}</div><div class="arts">${artChips(p.latest.meta, 24) || `<span class="sub">artwork not recorded</span>`}</div></div>`;
+  }).join("") || `<div class="empty">No projects opened in this time.</div>`;
+  $("projectCards").querySelectorAll(".pcard").forEach(n => n.onclick = () => openUser(n.dataset.uid));
+  $("projectSearch").oninput = e => { state.projectSearch = e.target.value; renderProjects(); };
 }
 
 function weekDots(uid) {
@@ -626,14 +714,15 @@ async function openUser(uid) {
   try { d = await api.userDetail(uid); } catch (e) { dr.innerHTML += `<div class="err">${esc(e.message)}</div>`; return; }
   const ss = d.sessions;
   const heatCells = {}; ss.forEach(s => { const t = wall(s.local_start); const dow = ((t.getUTCDay() + 6) % 7) + 1, h = t.getUTCHours(); const k = dow + "-" + h; heatCells[k] = heatCells[k] || { dow, hour: h, sessions: 0 }; heatCells[k].sessions++; });
-  const kp = u ? [["Status", u.status], ["First seen", new Date(u.first_seen).toLocaleDateString()], ["Last seen", ago(u.last_seen)], ["Sessions", num(u.sessions)], ["Avg session", mins(u.avg_session_min)], ["Longest", mins(u.longest_session_min)], ["Total time", hours(u.total_minutes)], ["Projecting", u.projection_minutes ? hours(u.projection_minutes) : "-"], ["Weeks active (of 8)", u.active_weeks_8], ["Usually", usually(u) || "-"]] : [];
+  const kp = u ? [["Status", u.status], ["First seen", new Date(u.first_seen).toLocaleDateString()], ["Last seen", presence(u).live ? "Active now" : ago(u.last_seen)], ["Sessions", num(u.sessions)], ["Avg session", mins(u.avg_session_min)], ["Longest", mins(u.longest_session_min)], ["Total time", hours(u.total_minutes)], ["Projecting", u.projection_minutes ? hours(u.projection_minutes) : "-"], ["Weeks active (of 8)", u.active_weeks_8], ["Usually", usually(u) || "-"]] : [];
   dr.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:12px"><div class="who"><div class="av" style="background:${w.color};width:40px;height:40px;font-size:16px">${esc(w.initial)}</div><div><h2>${esc(w.name)}</h2><div class="sub">${esc(idLine)}</div></div></div><button id="closeDrawer">Close</button></div>
     ${u ? `<div class="kpis" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">${kp.map(([l, v]) => `<div class="kpi" style="padding:10px"><div class="l">${esc(l)}</div><div class="v" style="font-size:18px">${esc(String(v))}</div></div>`).join("")}</div>` : ""}
     <div class="panel"><h3>When they use it</h3><div class="heat">${heatGrid(Object.values(heatCells), "sessions")}</div></div>
+    <div class="panel"><h3>Projects</h3>${groupProjects(d.events.filter(e => e.event_type === "PROJECT_OPENED")).map(p => `<div style="margin-bottom:12px"><div class="sub">${esc(projectFacts(p))} · last ${esc(dateTime(p.latest.created_at))}</div><div class="arts">${artChips(p.latest.meta, 24)}</div></div>`).join("") || `<div class="empty">No projects recorded yet.</div>`}</div>
     <div class="panel"><h3>Sessions (${ss.length})</h3><div class="tw" style="max-height:320px;overflow-y:auto"><table><thead><tr><th>Started (their time)</th><th class="num">Length</th><th class="num">Projecting</th></tr></thead><tbody>
       ${ss.slice(0, 60).map(s => { const t = wall(s.local_start); return `<tr><td>${esc(t.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }))} ${esc(t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZone: "UTC" }))}</td><td class="num">${mins(s.seconds / 60)}</td><td class="num">${s.projection_seconds > 0 ? mins(s.projection_seconds / 60) : "-"}</td></tr>`; }).join("") || `<tr><td colspan="3" class="empty">No sessions recorded.</td></tr>`}
     </tbody></table></div></div>
-    <div class="panel"><h3>Recent activity</h3><div class="feed">${d.events.slice(0, 30).map(e => { const l = eventLine(e); return `<div class="it" style="cursor:default"><div class="ic">${l.icon}</div><div class="tx">${esc(l.text)}</div><div class="tm">${esc(dateTime(e.created_at))}</div></div>`; }).join("") || `<div class="empty">Nothing yet.</div>`}</div></div>`;
+    <div class="panel"><h3>Recent activity</h3><div class="feed">${d.events.slice(0, 30).map(e => { const l = eventLine(e); return `<div class="it" style="cursor:default"><div class="ic">${l.icon}</div><div class="tx">${esc(l.text)}${l.extra}</div><div class="tm">${esc(dateTime(e.created_at))}</div></div>`; }).join("") || `<div class="empty">Nothing yet.</div>`}</div></div>`;
   $("closeDrawer").onclick = closeDrawer;
 }
 function closeDrawer() { $("drawer").classList.remove("open"); $("drawerBg").classList.remove("open"); }
@@ -644,9 +733,9 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(
 function showTab(t) {
   state.tab = t; history.replaceState(null, "", "#" + t);
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
-  ["overview", "users", "patterns", "content", "emails", "inbox"].forEach(x => $("tab-" + x).classList.toggle("hide", x !== t));
+  ["overview", "users", "projects", "patterns", "content", "emails", "inbox"].forEach(x => $("tab-" + x).classList.toggle("hide", x !== t));
   if (!state.data) return;
-  ({ overview: () => { renderKpis(); renderTrend(); renderFeed(); renderRecentUsers(); }, users: renderUsers, patterns: renderPatterns, content: renderContent, emails: renderEmails, inbox: renderInbox }[t])();
+  ({ overview: () => { renderKpis(); renderTrend(); renderFeed(); renderRecentUsers(); }, users: renderUsers, projects: renderProjects, patterns: renderPatterns, content: renderContent, emails: renderEmails, inbox: renderInbox }[t])();
 }
 document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 $("userSearch").oninput = e => { state.search = e.target.value; renderUsers(); };
@@ -663,7 +752,7 @@ $("refreshBtn").onclick = load;
 
 async function start() {
   state.tab = (location.hash || "#overview").slice(1);
-  if (!["overview", "users", "patterns", "content", "emails", "inbox"].includes(state.tab)) state.tab = "overview";
+  if (!["overview", "users", "projects", "patterns", "content", "emails", "inbox"].includes(state.tab)) state.tab = "overview";
   if (DEMO) { $("demoBanner").classList.remove("hide"); $("signOutBtn").classList.add("hide"); $("passwordBtn").classList.add("hide"); $("appView").classList.remove("hide"); return load(); }
   sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, { auth: { persistSession: true, detectSessionInUrl: true } });
   const { data } = await sb.auth.getSession();
