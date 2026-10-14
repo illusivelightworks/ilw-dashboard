@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>ILW Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="config.js"></script>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #0f1823; --panel2: #132030; --line: #1e3347; --line2: #162636;
+    --text: #e8f6ff; --muted: #9fb4c8; --accent: #7fd3ff; --accent2: #2aa9ff;
+    --good: #5ee0a0; --warn: #ffcf5a; --bad: #ff7a8a; --violet: #b69cff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 14px; line-height: 1.45; }
+  a { color: var(--accent); }
+  .page { max-width: 1500px; margin: 0 auto; padding: 18px 20px 60px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  h1 { margin: 0; font-size: 22px; color: var(--accent); }
+  h2 { margin: 0; font-size: 16px; color: var(--accent); }
+  h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.1px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button, .btn { appearance: none; border: 1px solid var(--line); background: linear-gradient(180deg, var(--panel2), var(--bg)); color: var(--accent); border-radius: 9px; padding: 7px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  button:hover { border-color: var(--accent2); }
+  button.on { background: var(--accent2); color: #04121d; border-color: var(--accent2); font-weight: 600; }
+  button.ghost { background: none; }
+  input, select { background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 9px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
+  input:focus, select:focus { outline: none; border-color: var(--accent2); }
+  nav.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+  nav.tabs button { font-size: 13px; padding: 8px 14px; }
+  nav.tabs .badge { background: var(--bad); color: #1a0509; border-radius: 99px; padding: 0 7px; margin-left: 6px; font-size: 11px; font-weight: 700; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .panel > .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .grid { display: grid; gap: 14px; }
+  .g2 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: repeat(3, 1fr); } .g21 { grid-template-columns: 2fr 1fr; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  .kpi .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.1px; }
+  .kpi .v { font-size: 30px; font-weight: 700; color: var(--accent); line-height: 1.15; margin-top: 4px; }
+  .kpi .n { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; font-weight: 600; }
+  th.sort { cursor: pointer; } th.sort:hover { color: var(--accent); }
+  td { padding: 8px; border-bottom: 1px solid var(--line2); vertical-align: middle; }
+  tbody tr.click { cursor: pointer; } tbody tr.click:hover td { background: #122233; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; } th.num { text-align: right; }
+  .tw { overflow-x: auto; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
+  .pill.Recurring { color: var(--good); border-color: #1d5a40; background: #0c2a1e; }
+  .pill.Returning { color: var(--accent); border-color: #1c4a66; background: #0c2233; }
+  .pill.New { color: var(--muted); border-color: var(--line); background: var(--panel2); }
+  .pill.cast { color: var(--violet); border-color: #3a2f66; background: #181330; }
+  .pill.tier { color: var(--warn); border-color: #5a4a1a; background: #2a2208; }
+  .who { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #04121d; flex: none; }
+  .who .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+  .who .s { color: var(--muted); font-size: 11px; }
+  .feed { display: flex; flex-direction: column; }
+  .feed .it { display: flex; gap: 10px; align-items: center; padding: 8px 2px; border-bottom: 1px solid var(--line2); cursor: pointer; }
+  .feed .it:hover { background: #122233; }
+  .feed .ic { width: 26px; text-align: center; font-size: 16px; flex: none; }
+  .feed .tx { flex: 1; min-width: 0; }
+  .feed .tm { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chart-box { position: relative; height: 280px; }
+  .chart-box.short { height: 220px; }
+  .heat { display: grid; grid-template-columns: 38px repeat(24, 1fr); gap: 2px; font-size: 10px; color: var(--muted); }
+  .heat .c { aspect-ratio: 1.15; border-radius: 3px; min-height: 14px; }
+  .heat .lb { display: flex; align-items: center; }
+  .heat .hh { text-align: center; }
+  .coh td, .coh th { text-align: center; padding: 5px 6px; font-size: 12px; }
+  .coh td:first-child, .coh th:first-child { text-align: left; white-space: nowrap; }
+  .gigs { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+  .gig { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; }
+  .gig:hover { border-color: var(--accent2); }
+  .gig .pat { margin: 8px 0 6px; font-size: 15px; color: var(--text); }
+  .dots { display: flex; gap: 4px; margin-top: 8px; align-items: center; }
+  .dot { width: 14px; height: 14px; border-radius: 4px; background: #0c1520; border: 1px solid var(--line); }
+  .dot.on { background: var(--good); border-color: var(--good); }
+  .msg { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; background: var(--panel2); }
+  .msg.new { border-color: var(--accent2); }
+  .msg .body { white-space: pre-wrap; margin: 6px 0 10px; font-size: 15px; }
+  .empty { color: var(--muted); padding: 18px 4px; }
+  .bar { height: 8px; background: #0c1520; border-radius: 99px; overflow: hidden; min-width: 70px; }
+  .bar > i { display: block; height: 100%; background: var(--accent2); }
+  .drawer-bg { position: fixed; inset: 0; background: rgba(2, 6, 10, .6); display: none; z-index: 20; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(680px, 100vw); background: var(--bg); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px; z-index: 21; display: none; }
+  .drawer.open, .drawer-bg.open { display: block; }
+  .login { max-width: 380px; margin: 12vh auto; }
+  .login input { width: 100%; margin-bottom: 10px; }
+  .login button { width: 100%; padding: 10px; font-size: 14px; }
+  .banner { background: #2a2208; border: 1px solid #5a4a1a; color: var(--warn); border-radius: 10px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px; }
+  .err { color: var(--bad); margin-top: 8px; }
+  .hide { display: none !important; }
+  @media (max-width: 1000px) { .g2, .g3, .g21 { grid-template-columns: 1fr; } .page { padding: 12px 12px 50px; } .kpi .v { font-size: 26px; } .who .t { max-width: 150px; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Sign-in -->
+  <div id="loginView" class="login hide">
+    <h1>ILW Dashboard</h1>
+    <p class="sub">Sign in with the email you added to the admins list.</p>
+    <input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email">
+    <input id="loginPassword" type="password" placeholder="Password (leave empty to get an email link)" autocomplete="current-password">
+    <button id="loginBtn">Sign in</button>
+    <div id="loginMsg" class="sub" style="margin-top:10px"></div>
+  </div>
+
+  <!-- App -->
+  <div id="appView" class="hide">
+    <header class="top">
+      <div>
+        <h1>ILW Dashboard</h1>
+        <div class="sub"><span id="updated">Loading...</span></div>
+      </div>
+      <div class="row">
+        <button id="refreshBtn">Refresh</button>
+        <button id="signOutBtn" class="ghost">Sign out</button>
+      </div>
+    </header>
+    <div id="demoBanner" class="banner hide">Showing demo data. Add your Supabase URL and key to config.js to see your own.</div>
+
+    <nav class="tabs" id="tabs">
+      <button data-tab="overview">Overview</button>
+      <button data-tab="users">Users</button>
+      <button data-tab="patterns">Patterns</button>
+      <button data-tab="content">Content</button>
+      <button data-tab="emails">Emails</button>
+      <button data-tab="inbox">Inbox<span id="inboxBadge" class="badge hide">0</span></button>
+    </nav>
+
+    <section id="tab-overview" class="hide">
+      <div class="kpis" id="kpis"></div>
+      <div class="grid g21">
+        <div class="panel">
+          <div class="head"><div><h3>Trend</h3><h2 id="trendTitle">Active users per day</h2></div>
+            <div class="row">
+              <div class="chips" id="metricChips"></div>
+              <div class="chips" id="rangeChips"></div>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="trendChart"></canvas></div>
+        </div>
+        <div class="panel">
+          <div class="head"><div><h3>Live</h3><h2>Recent activity</h2></div></div>
+          <div class="feed" id="feed"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="head"><div><h3>Who</h3><h2>Recently active users</h2></div><span class="sub">Click anyone for their full activity</span></div>
+        <div class="tw"><table><thead><tr><th>User</th><th>Status</th><th>Last seen</th><th class="num">Sessions</th><th class="num">Avg session</th><th class="num">Total time</th><th>Usually</th></tr></thead><tbody id="recentUsers"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="tab-users" class="hide">
+      <div class="panel">
+        <div class="head">
+          <div><h3>Everyone</h3><h2 id="usersTitle">Users</h2></div>
+          <div class="row"><input id="userSearch" type="search" placeholder="Search email or id"><div class="chips" id="userFilters"></div></div>
+        </div>
+        <div class="tw"><table><thead id="usersHead"></thead><tbody id="usersBody"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="tab-patterns" class="hide">
+      <div class="panel">
+        <div class="head"><div><h3>Subscriptions signal</h3><h2>Likely recurring users</h2></div>
+          <span class="sub">Active in at least 4 of the last 8 weeks. Dots = each of the last 8 weeks (oldest first).</span></div>
+        <div class="gigs" id="gigs"></div>
+        <div style="margin-top:12px"><button id="gigsMore" class="hide"></button></div>
+      </div>
+      <div class="grid g2">
+        <div class="panel">
+          <div class="head"><div><h3>Retention</h3><h2>Do people come back?</h2></div><span class="sub">Share of each week's new users who were active again N weeks later</span></div>
+          <div class="tw"><table class="coh" id="cohorts"></table></div>
+        </div>
+        <div class="panel">
+          <div class="head"><div><h3>When</h3><h2>Busiest times</h2></div><span class="sub">Sessions by weekday and hour, in the users' own time. Last 90 days.</span></div>
+          <div class="heat" id="heat"></div>
+        </div>
+      </div>
+      <div class="grid g2">
+        <div class="panel">
+          <div class="head"><div><h3>Sessions</h3><h2>How long a session lasts</h2></div></div>
+          <div class="chart-box short"><canvas id="lenChart"></canvas></div>
+        </div>
+        <div class="panel">
+          <div class="head"><div><h3>Projecting</h3><h2>Who projects the most</h2></div><span class="sub">App cast, screen mirroring or a cable, while the app is open</span></div>
+          <div class="tw"><table><thead><tr><th>User</th><th class="num">Projecting</th><th>How</th><th>Usually</th></tr></thead><tbody id="casters"></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-content" class="hide">
+      <div class="grid g2">
+        <div class="panel">
+          <div class="head"><div><h3>Artwork</h3><h2>Most popular</h2></div><span class="sub">Users = different people</span></div>
+          <div class="tw"><table><thead><tr><th>Artwork</th><th class="num">Users</th><th class="num">Downloads</th><th class="num">New projects</th><th class="num">Opens</th></tr></thead><tbody id="artwork"></tbody></table></div>
+        </div>
+        <div>
+          <div class="panel">
+            <div class="head"><div><h3>Projects</h3><h2>What projects look like</h2></div></div>
+            <div id="projectStats"></div>
+            <div class="chart-box short"><canvas id="gridsChart"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="head"><div><h3>Together</h3><h2>Artwork used together</h2></div></div>
+            <div class="tw"><table><thead><tr><th>Combination</th><th class="num">Times</th><th class="num">Users</th></tr></thead><tbody id="combos"></tbody></table></div>
+          </div>
+          <div class="panel">
+            <div class="head"><div><h3>Support</h3><h2>Support purchases</h2></div></div>
+            <div class="tw"><table><thead><tr><th>When</th><th>Who</th><th>Tier</th></tr></thead><tbody id="donations"></tbody></table></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-emails" class="hide">
+      <div class="panel">
+        <div class="head">
+          <div><h3>Mailing list</h3><h2 id="emailTitle">Everyone with an email</h2><div class="sub">The "get updates" pop-up plus any email that came with usage. Old addresses stay on the list; the current one is shown beside them.</div></div>
+          <div class="row"><input id="emailSearch" type="search" placeholder="Search"><button id="copyEmails">Copy all</button><button id="csvEmails">Download CSV</button></div>
+        </div>
+        <div class="tw"><table><thead><tr><th>Email</th><th>Added</th><th>Last used the app</th><th class="num">Sessions</th><th class="num">Time</th><th>Status</th><th>Platform</th></tr></thead><tbody id="emails"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="tab-inbox" class="hide">
+      <div class="panel">
+        <div class="head"><div><h3>Messages</h3><h2>From users</h2></div><div class="chips" id="msgFilters"></div></div>
+        <div id="messages"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="drawer-bg" id="drawerBg"></div>
+<aside class="drawer" id="drawer"></aside>
+
+<script>
+"use strict";
+/* ============================================================================================================
+   Data access: Supabase, or the bundled demo data (?demo, or when config.js has no URL).
+   ============================================================================================================ */
+const cfg = window.ILW_CONFIG || {};
+const DEMO = new URLSearchParams(location.search).has("demo") || !cfg.supabaseUrl;
+let sb = null;
+const DAY = 86400000;
+
+const api = {
+  async isAdmin() {
+    if (DEMO) return true;
+    const { data, error } = await sb.rpc("is_admin");
+    return !error && data === true;
+  },
+  // Supabase returns at most 1000 rows per request, so ask in pages until it runs out.
+  async pageAll(build) {
+    const out = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await build().range(from, from + 999);
+      if (error) throw error;
+      out.push(...data);
+      if (data.length < 1000) return out;
+    }
+  },
+  async core() {
+    if (DEMO) return loadDemo();
+    const rpc = (name, args) => sb.rpc(name, args).then(({ data, error }) => { if (error) throw error; return data; });
+    const [overview, users, daily, heat, cohorts, lengths, artwork, combos, projects, userWeeks, events, donations, messages, emails] = await Promise.all([
+      rpc("dash_overview"),
+      this.pageAll(() => sb.from("user_stats_v").select("*").order("last_seen", { ascending: false })),
+      rpc("dash_daily", { p_days: 90 }),
+      rpc("dash_heatmap", { p_days: 90 }),
+      rpc("dash_cohorts", { p_weeks: 12 }),
+      rpc("dash_session_lengths"),
+      rpc("dash_artwork"),
+      rpc("dash_combos"),
+      rpc("dash_projects"),
+      this.pageAll(() => sb.rpc("dash_user_weeks", { p_weeks: 8 })),
+      sb.from("events_v").select("id,created_at,uid,email,event_type,meta,props,platform,app_version").not("event_type", "in", "(SESSION_HEARTBEAT,APP_BACKGROUNDED,APP_CLOSED)").order("created_at", { ascending: false }).limit(300).then(r => { if (r.error) throw r.error; return r.data; }),
+      sb.from("events_v").select("id,created_at,uid,email,meta").eq("event_type", "DONATE").order("created_at", { ascending: false }).limit(200).then(r => { if (r.error) throw r.error; return r.data; }),
+      this.pageAll(() => sb.from("messages").select("*").order("created_at", { ascending: false })),
+      this.pageAll(() => sb.from("email_list_v").select("*").order("added_at", { ascending: false })),
+    ]);
+    return { overview, users, daily, heat, cohorts, lengths, artwork, combos, projects, userWeeks, events, donations, messages, emails, sessions: null };
+  },
+  async userDetail(uid) {
+    if (DEMO) return {
+      sessions: state.data.sessions.filter(s => s.uid === uid).slice(0, 150),
+      events: state.data.events.filter(e => e.uid === uid).slice(0, 80),
+    };
+    const [s, e] = await Promise.all([
+      sb.from("sessions_v").select("*").eq("uid", uid).order("started_at", { ascending: false }).limit(150),
+      sb.from("events_v").select("id,created_at,uid,event_type,meta,props").eq("uid", uid).not("event_type", "in", "(SESSION_HEARTBEAT,APP_BACKGROUNDED,APP_CLOSED)").order("created_at", { ascending: false }).limit(80),
+    ]);
+    if (s.error) throw s.error; if (e.error) throw e.error;
+    return { sessions: s.data, events: e.data };
+  },
+  async setMessageStatus(id, status) {
+    if (DEMO) return;
+    const { error } = await sb.from("messages").update({ status }).eq("id", id);
+    if (error) throw error;
+  },
+};
+
+// The demo file was made at some moment; shift it by whole days so it looks current and weekdays still line up.
+async function loadDemo() {
+  const d = await (await fetch("demo-data.json")).json();
+  const shift = Math.floor((Date.now() - new Date(d.generated_at).getTime()) / DAY);
+  const ms = shift * DAY;
+  const shiftIso = s => s == null ? s : new Date(new Date(s).getTime() + ms).toISOString();
+  const shiftWall = s => s == null ? s : new Date(new Date(s + "Z").getTime() + ms).toISOString().slice(0, 23);
+  const shiftDay = s => new Date(new Date(s + "T00:00:00Z").getTime() + ms).toISOString().slice(0, 10);
+  const fix = (rows, iso = [], wall = [], day = []) => rows.forEach(r => { iso.forEach(k => r[k] = shiftIso(r[k])); wall.forEach(k => r[k] = shiftWall(r[k])); day.forEach(k => r[k] = shiftDay(r[k])); });
+  fix(d.users, ["first_seen", "last_seen"]);
+  fix(d.sessions, ["started_at", "ended_at"], ["local_start"]);
+  fix(d.events, ["created_at"]); fix(d.donations, ["created_at"]); fix(d.messages, ["created_at"]); fix(d.emails, ["added_at", "last_seen"]);
+  fix(d.daily, [], [], ["day"]); fix(d.cohorts, [], [], ["cohort"]); fix(d.userWeeks, [], [], ["wk"]);
+  return d;
+}
+
+/* ============================================================================================================
+   Small helpers
+   ============================================================================================================ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = (n, d = 0) => (n == null || isNaN(n)) ? "-" : Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
+const WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const wall = s => new Date(String(s).replace(" ", "T").slice(0, 19) + "Z");        // a "wall clock" string read as-is (its UTC fields are what it says)
+const mins = m => m == null ? "-" : (m >= 120 ? num(m / 60, 1) + " h" : num(m, m < 10 ? 1 : 0) + " min");
+const hours = m => m == null ? "-" : num(m / 60, 1) + " h";
+const hourLabel = h => h == null ? "" : ((h % 12) || 12) + (h < 12 ? " am" : " pm");
+function ago(iso) {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return "just now"; if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago"; if (s < 86400 * 30) return Math.floor(s / 86400) + " d ago";
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+const dateTime = iso => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+function hash(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
+function who(uid) {
+  const email = state.emailOf && state.emailOf[uid] || (String(uid).includes("@") ? uid : "");
+  const short = String(uid).includes("@") ? "" : String(uid).replace(/^i-/, "").slice(-4);
+  const name = email || "Guest " + short;
+  const color = `hsl(${hash(uid) % 360} 70% 68%)`;
+  return { name, email, short, color, initial: (email ? email[0] : "G").toUpperCase() };
+}
+// Name (the email when known) with the install id beside it, since the email can change and the id never does.
+function whoCell(uid, sub) {
+  const w = who(uid);
+  const line = [w.email && w.short ? "ID " + w.short : "", sub].filter(Boolean).join(" · ");
+  return `<div class="who"><div class="av" style="background:${w.color}">${esc(w.initial)}</div><div style="min-width:0"><div class="t">${esc(w.name)}</div>${line ? `<div class="s">${esc(line)}</div>` : ""}</div></div>`;
+}
+const usually = u => [u.usual_days, u.typical_hour != null && u.sessions > 1 ? "around " + hourLabel(u.typical_hour) : ""].filter(Boolean).join(" · ");
+const pill = s => `<span class="pill ${esc(s)}">${esc(s)}</span>`;
+// How someone projects: the app's own cast, screen mirroring (iOS screen share), or a cable to a projector / TV.
+const modePills = u => [u.cast_minutes > 0 ? "AirPlay cast" : "", u.mirror_minutes > 0 ? "Screen mirror" : "", u.external_minutes > 0 ? "Cable / display" : ""].filter(Boolean).map(m => `<span class="pill cast">${m}</span>`).join("");
+
+const EVENT_TEXT = {
+  SESSION_START: ["📱", () => "opened the app"],
+  PROJECT_OPENED: ["📂", e => "opened a project" + (e.meta ? " with " + e.meta.split(",").map(s => s.trim()).filter(Boolean).slice(0, 3).join(", ") : "") + (e.props && e.props.grids ? ` (${e.props.grids} grid${e.props.grids > 1 ? "s" : ""})` : "")],
+  NEW_PROJECT: ["✨", e => "started a new project" + (e.meta ? " with " + e.meta : "")],
+  ARTWORK_DOWNLOADED: ["⬇️", e => "downloaded " + (e.meta || "artwork")],
+  CAST_STARTED: ["📡", () => "started casting"],
+  CAST_STOPPED: ["📡", e => "stopped casting after " + mins((+e.meta || 0) / 60)],
+  DONATE: ["💛", e => "bought " + (e.meta || "a support tier")],
+};
+function eventLine(e) { const [icon, f] = EVENT_TEXT[e.event_type] || ["•", ev => ev.event_type.toLowerCase().replace(/_/g, " ")]; return { icon, text: f(e) }; }
+
+/* ============================================================================================================
+   State and rendering
+   ============================================================================================================ */
+const state = { emailOf: {}, data: null, tab: "overview", metric: "active_users", range: 30, filter: "all", sortKey: "last_seen", sortAsc: false, search: "", msgFilter: "new", showAllGigs: false, charts: {} };
+const METRICS = {
+  active_users: ["Active users", "Active users per day", r => r.active_users],
+  sessions: ["Sessions", "Sessions per day", r => r.sessions],
+  hours: ["Hours of use", "Hours of use per day", r => Math.round(r.minutes / 6) / 10],
+  projection_hours: ["Projecting hours", "Hours spent projecting per day", r => Math.round(r.projection_minutes / 6) / 10],
+  new_users: ["New users", "New users per day", r => r.new_users],
+};
+
+function chip(container, items, current, onPick) {
+  container.innerHTML = items.map(([k, label]) => `<button data-k="${esc(k)}" class="${String(k) === String(current) ? "on" : ""}">${esc(label)}</button>`).join("");
+  container.querySelectorAll("button").forEach(b => b.onclick = () => onPick(b.dataset.k));
+}
+function chartColors() { return { grid: "#162636", text: "#9fb4c8" }; }
+function drawChart(id, cfgObj) {
+  if (state.charts[id]) state.charts[id].destroy();
+  const c = chartColors();
+  cfgObj.options = Object.assign({ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }, cfgObj.options || {});
+  cfgObj.options.scales = Object.assign({ x: { ticks: { color: c.text, maxRotation: 0, autoSkip: true }, grid: { color: c.grid } }, y: { beginAtZero: true, ticks: { color: c.text, precision: 0 }, grid: { color: c.grid } } }, cfgObj.options.scales || {});
+  state.charts[id] = new Chart($(id), cfgObj);
+}
+
+function renderKpis() {
+  const o = state.data.overview, u = state.data.users;
+  const retained = o.total_users ? Math.round(100 * o.returning_users / o.total_users) : 0;
+  const k = [
+    ["Total users", num(o.total_users), `${num(o.new_7d)} new this week`],
+    ["Active this week", num(o.active_7d), `${num(o.active_30d)} in the last 30 days`],
+    ["Come back", retained + "%", `${num(o.returning_users)} used it on 2+ days`],
+    ["Recurring users", num(o.recurring_users), "active in 4 of the last 8 weeks"],
+    ["Avg session", mins(o.avg_session_min), `median ${mins(o.median_session_min)} · ${num(o.long_sessions)} over 10 min`],
+    ["Time in app, 30 days", num(o.hours_30d, 0) + " h", `${num(o.sessions_30d)} sessions`],
+    ["Projecting, 30 days", num(o.projection_hours_30d, 0) + " h", `${num(o.projection_users)} people have projected`],
+    ["Support purchases", num(o.donations), `${num(o.emails)} emails collected`],
+  ];
+  $("kpis").innerHTML = k.map(([l, v, n]) => `<div class="kpi"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div><div class="n">${esc(n)}</div></div>`).join("");
+}
+
+function renderTrend() {
+  chip($("metricChips"), Object.entries(METRICS).map(([k, m]) => [k, m[0]]), state.metric, k => { state.metric = k; renderTrend(); });
+  chip($("rangeChips"), [[30, "30 d"], [60, "60 d"], [90, "90 d"]], state.range, k => { state.range = +k; renderTrend(); });
+  const [, title, f] = METRICS[state.metric];
+  $("trendTitle").textContent = title;
+  const rows = state.data.daily.slice(-state.range);
+  const type = state.metric === "active_users" ? "line" : "bar";
+  drawChart("trendChart", {
+    type,
+    data: { labels: rows.map(r => new Date(r.day + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })), datasets: [{ data: rows.map(f), borderColor: "#7fd3ff", backgroundColor: type === "line" ? "rgba(127,211,255,.15)" : "#2aa9ff", fill: true, tension: .3, pointRadius: 2, borderRadius: 3 }] },
+  });
+}
+
+function renderFeed() {
+  const items = state.data.events.slice(0, 22);
+  $("feed").innerHTML = items.length ? items.map(e => {
+    const l = eventLine(e); const w = who(e.uid);
+    return `<div class="it" data-uid="${esc(e.uid)}"><div class="ic">${l.icon}</div><div class="tx"><b>${esc(w.name)}</b> ${esc(l.text)}</div><div class="tm">${esc(ago(e.created_at))}</div></div>`;
+  }).join("") : `<div class="empty">No activity yet.</div>`;
+  $("feed").querySelectorAll(".it").forEach(n => n.onclick = () => openUser(n.dataset.uid));
+}
+
+function renderRecentUsers() {
+  const rows = state.data.users.slice(0, 12);
+  $("recentUsers").innerHTML = rows.map(u => `<tr class="click" data-uid="${esc(u.uid)}">
+    <td>${whoCell(u.uid, (u.platform || "") + (u.app_version ? " · v" + u.app_version : ""))}</td><td>${pill(u.status)}</td><td>${esc(ago(u.last_seen))}</td>
+    <td class="num">${num(u.sessions)}</td><td class="num">${mins(u.avg_session_min)}</td><td class="num">${hours(u.total_minutes)}</td><td>${esc(usually(u))}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No users yet.</td></tr>`;
+  bindRows("recentUsers");
+}
+function bindRows(id) { $(id).querySelectorAll("tr.click").forEach(r => r.onclick = () => openUser(r.dataset.uid)); }
+
+const USER_COLS = [
+  ["uid", "User"], ["status", "Status"], ["last_seen", "Last seen"], ["first_seen", "First seen"], ["sessions", "Sessions", 1], ["active_days_30", "Days (30 d)", 1],
+  ["avg_session_min", "Avg session", 1], ["total_minutes", "Total time", 1], ["projection_minutes", "Projecting", 1], ["usual_days", "Usual days"], ["project_opens", "Projects", 1], ["favorite_artwork", "Favorite artwork"],
+];
+function renderUsers() {
+  const f = state.filter, q = state.search.toLowerCase();
+  const filters = {
+    all: ["All", () => true], active: ["Active this week", u => Date.now() - new Date(u.last_seen) < 7 * DAY], recurring: ["Recurring", u => u.status === "Recurring"],
+    returning: ["Returning", u => u.status !== "New"], newish: ["New (1 day)", u => u.status === "New"], cast: ["Projectors", u => u.projection_minutes > 0], support: ["Supporters", u => u.donations > 0], email: ["Gave email", u => u.email],
+  };
+  chip($("userFilters"), Object.entries(filters).map(([k, v]) => [k, v[0]]), f, k => { state.filter = k; renderUsers(); });
+  let rows = state.data.users.filter(filters[f][1]).filter(u => !q || u.uid.toLowerCase().includes(q) || (u.email || "").includes(q));
+  const k = state.sortKey, dir = state.sortAsc ? 1 : -1;
+  rows.sort((a, b) => { const x = a[k], y = b[k]; if (x == null) return 1; if (y == null) return -1; return (typeof x === "number" ? x - y : String(x).localeCompare(String(y))) * dir; });
+  $("usersTitle").textContent = `Users (${num(rows.length)})`;
+  $("usersHead").innerHTML = "<tr>" + USER_COLS.map(([key, label, n]) => `<th class="sort ${n ? "num" : ""}" data-k="${key}">${esc(label)}${key === state.sortKey ? (state.sortAsc ? " ▲" : " ▼") : ""}</th>`).join("") + "</tr>";
+  $("usersHead").querySelectorAll("th").forEach(th => th.onclick = () => { if (state.sortKey === th.dataset.k) state.sortAsc = !state.sortAsc; else { state.sortKey = th.dataset.k; state.sortAsc = false; } renderUsers(); });
+  $("usersBody").innerHTML = rows.slice(0, 500).map(u => `<tr class="click" data-uid="${esc(u.uid)}">
+    <td>${whoCell(u.uid, u.donations ? "supporter" : "")}</td><td>${pill(u.status)}</td><td>${esc(ago(u.last_seen))}</td><td>${esc(new Date(u.first_seen).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</td>
+    <td class="num">${num(u.sessions)}</td><td class="num">${num(u.active_days_30)}</td><td class="num">${mins(u.avg_session_min)}</td><td class="num">${hours(u.total_minutes)}</td><td class="num">${u.projection_minutes ? hours(u.projection_minutes) : "-"}</td>
+    <td style="white-space:nowrap">${esc(usually(u))}</td><td class="num">${num(u.project_opens)}</td><td>${esc(u.favorite_artwork || "")}</td></tr>`).join("") || `<tr><td colspan="12" class="empty">Nobody matches.</td></tr>`;
+  bindRows("usersBody");
+}
+
+function weekDots(uid) {
+  const wk = state.data.userWeeks.filter(w => w.uid === uid).map(w => w.wk);
+  const now = new Date(); const mon = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  mon.setUTCDate(mon.getUTCDate() - ((mon.getUTCDay() + 6) % 7));
+  let out = "";
+  for (let i = 7; i >= 0; i--) { const d = new Date(mon.getTime() - i * 7 * DAY).toISOString().slice(0, 10); out += `<div class="dot ${wk.includes(d) ? "on" : ""}" title="week of ${d}"></div>`; }
+  return out;
+}
+function renderGigs() {
+  const all = state.data.users.filter(u => u.status === "Recurring").sort((a, b) => b.total_minutes - a.total_minutes);
+  const rows = state.showAllGigs ? all : all.slice(0, 12);
+  $("gigs").innerHTML = rows.length ? rows.map(u => {
+    const projShare = u.total_minutes ? u.projection_minutes / u.total_minutes : 0;
+    return `<div class="gig" data-uid="${esc(u.uid)}">${whoCell(u.uid, (u.platform || "") + " · " + num(u.sessions) + " sessions")}
+      <div class="pat">${esc(u.usual_days || "Varies")}${u.typical_hour != null ? " · around " + esc(hourLabel(u.typical_hour)) : ""}</div>
+      <div class="sub">Sessions average ${esc(mins(u.avg_session_min))} (longest ${esc(mins(u.longest_session_min))}) · ${esc(hours(u.total_minutes))} total</div>
+      <div class="row" style="margin-top:8px">${projShare > .3 ? `<span class="pill cast">projecting ${Math.round(Math.min(1, projShare) * 100)}% of the time</span>` : ""}${modePills(u)}${u.donations ? `<span class="pill tier">supporter</span>` : ""}</div>
+      <div class="dots">${weekDots(u.uid)}<span class="sub" style="margin-left:6px">${u.active_weeks_8}/8 weeks</span></div></div>`;
+  }).join("") : `<div class="empty">No recurring users yet. Once someone has been active in 4 of the last 8 weeks they show up here.</div>`;
+  $("gigs").querySelectorAll(".gig").forEach(n => n.onclick = () => openUser(n.dataset.uid));
+  $("gigsMore").classList.toggle("hide", all.length <= 12);
+  $("gigsMore").textContent = state.showAllGigs ? "Show fewer" : `Show all ${all.length}`;
+  $("gigsMore").onclick = () => { state.showAllGigs = !state.showAllGigs; renderGigs(); };
+}
+
+function heatGrid(cells, key) {
+  const m = {}; let max = 0;
+  cells.forEach(c => { m[c.dow + "-" + c.hour] = c[key]; max = Math.max(max, c[key]); });
+  let html = `<div></div>` + Array.from({ length: 24 }, (_, h) => `<div class="hh">${h % 3 === 0 ? (h === 0 ? "12a" : h < 12 ? h : h === 12 ? "12p" : h - 12) : ""}</div>`).join("");
+  for (let d = 1; d <= 7; d++) {
+    html += `<div class="lb">${WD[d - 1]}</div>`;
+    for (let h = 0; h < 24; h++) {
+      const v = m[d + "-" + h] || 0, a = max ? v / max : 0;
+      html += `<div class="c" title="${WD[d - 1]} ${hourLabel(h)}: ${v}" style="background:${v ? `rgba(42,169,255,${.15 + .85 * a})` : "#0c1520"}"></div>`;
+    }
+  }
+  return html;
+}
+function renderPatterns() {
+  renderGigs();
+  $("heat").innerHTML = heatGrid(state.data.heat, "sessions");
+  // cohorts
+  const byCohort = {};
+  state.data.cohorts.forEach(c => { (byCohort[c.cohort] = byCohort[c.cohort] || { size: c.size, w: {} }).w[c.week_n] = c.retained; });
+  const cohortWeeks = Object.keys(byCohort).sort();
+  const weeksAgo = c => Math.round((Date.now() - new Date(c + "T00:00:00Z")) / (7 * DAY));
+  const maxN = 8;
+  let h = `<thead><tr><th>Joined (week of)</th><th>Users</th>${Array.from({ length: maxN }, (_, i) => `<th>${i === 0 ? "Wk 0" : "+" + i}</th>`).join("")}</tr></thead><tbody>`;
+  cohortWeeks.forEach(c => {
+    const co = byCohort[c];
+    h += `<tr><td>${esc(new Date(c + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }))}</td><td>${num(co.size)}</td>`;
+    for (let i = 0; i < maxN; i++) {
+      if (i > weeksAgo(c)) { h += `<td></td>`; continue; }
+      const r = co.w[i] || 0, p = co.size ? r / co.size : 0;
+      h += `<td style="background:rgba(94,224,160,${(.06 + .7 * p).toFixed(2)})" title="${r} of ${co.size}">${Math.round(p * 100)}%</td>`;
+    }
+    h += "</tr>";
+  });
+  $("cohorts").innerHTML = cohortWeeks.length ? h + "</tbody>" : `<tbody><tr><td class="empty">Not enough history yet.</td></tr></tbody>`;
+  drawChart("lenChart", { type: "bar", data: { labels: state.data.lengths.map(l => l.bucket), datasets: [{ data: state.data.lengths.map(l => l.sessions), backgroundColor: "#2aa9ff", borderRadius: 4 }] } });
+  const casters = state.data.users.filter(u => u.projection_minutes > 0).sort((a, b) => b.projection_minutes - a.projection_minutes).slice(0, 10);
+  $("casters").innerHTML = casters.map(u => `<tr class="click" data-uid="${esc(u.uid)}"><td>${whoCell(u.uid)}</td><td class="num">${hours(u.projection_minutes)}</td><td>${modePills(u)}</td><td>${esc(usually(u))}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">Nobody has projected yet.</td></tr>`;
+  bindRows("casters");
+}
+
+function renderContent() {
+  const art = state.data.artwork, max = Math.max(1, ...art.map(a => a.users));
+  $("artwork").innerHTML = art.slice(0, 40).map(a => `<tr><td>${esc(a.name)}<div class="bar" style="margin-top:4px"><i style="width:${Math.round(100 * a.users / max)}%"></i></div></td><td class="num">${num(a.users)}</td><td class="num">${num(a.downloads)}</td><td class="num">${num(a.new_projects)}</td><td class="num">${num(a.opens)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No artwork activity yet.</td></tr>`;
+  const p = state.data.projects || {};
+  $("projectStats").innerHTML = p.projects ? `<div class="row" style="margin-bottom:10px"><span class="pill Returning">${num(p.projects)} projects seen</span><span class="pill New">avg ${num(p.avg_grids, 1)} grids</span><span class="pill New">${Math.round(100 * p.with_masks / p.projects)}% use masks</span><span class="pill New">${Math.round(100 * p.with_warp / p.projects)}% use warp paint</span></div>` : `<div class="empty">Project details arrive once the new app version is out.</div>`;
+  const gc = (p.grid_counts || []);
+  drawChart("gridsChart", { type: "bar", data: { labels: gc.map(g => g.grids + (g.grids === 1 ? " grid" : " grids")), datasets: [{ data: gc.map(g => g.projects), backgroundColor: "#7fd3ff", borderRadius: 4 }] } });
+  $("combos").innerHTML = state.data.combos.slice(0, 12).map(c => `<tr><td>${esc(c.combo)}</td><td class="num">${num(c.times)}</td><td class="num">${num(c.users)}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">No multi-artwork projects yet.</td></tr>`;
+  $("donations").innerHTML = state.data.donations.slice(0, 15).map(d => `<tr class="click" data-uid="${esc(d.uid)}"><td>${esc(dateTime(d.created_at))}</td><td>${whoCell(d.uid)}</td><td><span class="pill tier">${esc(String(d.meta || "").replace("ILW.LightMapper.Support.", ""))}</span></td></tr>`).join("") || `<tr><td colspan="3" class="empty">No support purchases yet.</td></tr>`;
+  bindRows("donations");
+}
+
+function renderInbox() {
+  const msgs = state.data.messages;
+  const counts = { new: 0, read: 0, done: 0 }; msgs.forEach(m => counts[m.status]++);
+  chip($("msgFilters"), [["new", `New (${counts.new})`], ["read", `Read (${counts.read})`], ["done", `Done (${counts.done})`], ["all", "All"]], state.msgFilter, k => { state.msgFilter = k; renderInbox(); });
+  const rows = msgs.filter(m => state.msgFilter === "all" || m.status === state.msgFilter);
+  $("messages").innerHTML = rows.map(m => {
+    const email = m.user_email || state.emailOf[m.install_id] || "";
+    const sender = email ? `<b>${esc(email)}</b>` : `<b>No email on file</b>`;
+    const id = m.install_id ? `<span class="sub">ID ${esc(m.install_id.slice(-4))}</span>` : "";
+    return `<div class="msg ${m.status}"><div class="row">${sender}${id}<span class="sub">${esc(dateTime(m.created_at))}${m.platform ? " · " + esc(m.platform) : ""}${m.app_version ? " · v" + esc(m.app_version) : ""}</span></div>
+    <div class="body">${esc(m.message)}</div>
+    <div class="row">${["new", "read", "done"].filter(s => s !== m.status).map(s => `<button data-id="${m.id}" data-s="${s}">Mark ${s}</button>`).join("")}${email ? `<a class="btn" href="mailto:${esc(email)}?subject=Re: ILW Light Mapper&body=${encodeURIComponent("\n\n> " + m.message)}">Reply</a>` : ""}${m.install_id && state.data.users.some(u => u.uid === m.install_id) ? `<button data-user="${esc(m.install_id)}">View user</button>` : ""}</div></div>`;
+  }).join("") || `<div class="empty">Nothing here.</div>`;
+  $("messages").querySelectorAll("button[data-id]").forEach(b => b.onclick = async () => {
+    const m = msgs.find(x => String(x.id) === b.dataset.id); const prev = m.status; m.status = b.dataset.s; renderInbox(); renderBadge();
+    try { await api.setMessageStatus(m.id, m.status); } catch (e) { m.status = prev; renderInbox(); renderBadge(); alert("Could not update: " + e.message); }
+  });
+  $("messages").querySelectorAll("button[data-user]").forEach(b => b.onclick = () => openUser(b.dataset.user));
+}
+
+function renderEmails() {
+  const q = ($("emailSearch").value || "").toLowerCase();
+  const rows = state.data.emails.filter(e => !q || e.email.includes(q) || (e.current_email || "").includes(q));
+  $("emailTitle").textContent = `Everyone with an email (${num(state.data.emails.length)})`;
+  $("emails").innerHTML = rows.slice(0, 1000).map(e => `<tr class="${e.uid ? "click" : ""}" data-uid="${esc(e.uid || "")}">
+    <td>${esc(e.email)}${e.current_email && e.current_email !== e.email ? `<div class="s sub">now ${esc(e.current_email)}</div>` : ""}</td>
+    <td>${esc(new Date(e.added_at).toLocaleDateString())}</td><td>${e.last_seen ? esc(ago(e.last_seen)) : '<span class="sub">never</span>'}</td>
+    <td class="num">${e.sessions != null ? num(e.sessions) : "-"}</td><td class="num">${e.total_minutes ? hours(e.total_minutes) : "-"}</td><td>${e.status ? pill(e.status) : ""}</td><td>${esc(e.platform || "")}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">None yet.</td></tr>`;
+  bindRows("emails");
+  $("emailSearch").oninput = renderEmails;
+  const all = state.data.emails;
+  $("copyEmails").onclick = async () => { await navigator.clipboard.writeText(all.map(e => e.email).join("\n")); $("copyEmails").textContent = "Copied"; setTimeout(() => $("copyEmails").textContent = "Copy all", 1500); };
+  $("csvEmails").onclick = () => {
+    const cell = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = "email,added,last_used,sessions,minutes,status,platform,current_email\n" + all.map(e => [e.email, e.added_at, e.last_seen, e.sessions, e.total_minutes, e.status, e.platform, e.current_email].map(cell).join(",")).join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "ilw-emails.csv"; a.click();
+  };
+}
+function renderBadge() { const n = state.data.messages.filter(m => m.status === "new").length; $("inboxBadge").textContent = n; $("inboxBadge").classList.toggle("hide", n === 0); }
+
+/* ----- One person ----- */
+async function openUser(uid) {
+  const u = state.data.users.find(x => x.uid === uid); const w = who(uid);
+  const idLine = [w.email && w.short ? "ID " + w.short : "", u ? (u.platform || "") + (u.app_version ? " · v" + u.app_version : "") : ""].filter(Boolean).join(" · ");
+  const dr = $("drawer"); dr.classList.add("open"); $("drawerBg").classList.add("open");
+  dr.innerHTML = `<div class="row" style="justify-content:space-between"><div class="who"><div class="av" style="background:${w.color};width:40px;height:40px;font-size:16px">${esc(w.initial)}</div><div><h2>${esc(w.name)}</h2><div class="sub">${esc(idLine)}</div></div></div><button id="closeDrawer">Close</button></div><div class="empty">Loading...</div>`;
+  $("closeDrawer").onclick = closeDrawer;
+  let d;
+  try { d = await api.userDetail(uid); } catch (e) { dr.innerHTML += `<div class="err">${esc(e.message)}</div>`; return; }
+  const ss = d.sessions;
+  const heatCells = {}; ss.forEach(s => { const t = wall(s.local_start); const dow = ((t.getUTCDay() + 6) % 7) + 1, h = t.getUTCHours(); const k = dow + "-" + h; heatCells[k] = heatCells[k] || { dow, hour: h, sessions: 0 }; heatCells[k].sessions++; });
+  const kp = u ? [["Status", u.status], ["First seen", new Date(u.first_seen).toLocaleDateString()], ["Last seen", ago(u.last_seen)], ["Sessions", num(u.sessions)], ["Avg session", mins(u.avg_session_min)], ["Longest", mins(u.longest_session_min)], ["Total time", hours(u.total_minutes)], ["Projecting", u.projection_minutes ? hours(u.projection_minutes) : "-"], ["Weeks active (of 8)", u.active_weeks_8], ["Usually", usually(u) || "-"]] : [];
+  dr.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:12px"><div class="who"><div class="av" style="background:${w.color};width:40px;height:40px;font-size:16px">${esc(w.initial)}</div><div><h2>${esc(w.name)}</h2><div class="sub">${esc(idLine)}</div></div></div><button id="closeDrawer">Close</button></div>
+    ${u ? `<div class="kpis" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">${kp.map(([l, v]) => `<div class="kpi" style="padding:10px"><div class="l">${esc(l)}</div><div class="v" style="font-size:18px">${esc(String(v))}</div></div>`).join("")}</div>` : ""}
+    <div class="panel"><h3>When they use it</h3><div class="heat">${heatGrid(Object.values(heatCells), "sessions")}</div></div>
+    <div class="panel"><h3>Sessions (${ss.length})</h3><div class="tw" style="max-height:320px;overflow-y:auto"><table><thead><tr><th>Started (their time)</th><th class="num">Length</th><th class="num">Projecting</th></tr></thead><tbody>
+      ${ss.slice(0, 60).map(s => { const t = wall(s.local_start); return `<tr><td>${esc(t.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }))} ${esc(t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZone: "UTC" }))}</td><td class="num">${mins(s.seconds / 60)}</td><td class="num">${s.projection_seconds > 0 ? mins(s.projection_seconds / 60) : "-"}</td></tr>`; }).join("") || `<tr><td colspan="3" class="empty">No sessions recorded.</td></tr>`}
+    </tbody></table></div></div>
+    <div class="panel"><h3>Recent activity</h3><div class="feed">${d.events.slice(0, 30).map(e => { const l = eventLine(e); return `<div class="it" style="cursor:default"><div class="ic">${l.icon}</div><div class="tx">${esc(l.text)}</div><div class="tm">${esc(dateTime(e.created_at))}</div></div>`; }).join("") || `<div class="empty">Nothing yet.</div>`}</div></div>`;
+  $("closeDrawer").onclick = closeDrawer;
+}
+function closeDrawer() { $("drawer").classList.remove("open"); $("drawerBg").classList.remove("open"); }
+$("drawerBg").onclick = closeDrawer;
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+
+/* ----- Tabs, loading, sign-in ----- */
+function showTab(t) {
+  state.tab = t; history.replaceState(null, "", "#" + t);
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  ["overview", "users", "patterns", "content", "emails", "inbox"].forEach(x => $("tab-" + x).classList.toggle("hide", x !== t));
+  if (!state.data) return;
+  ({ overview: () => { renderKpis(); renderTrend(); renderFeed(); renderRecentUsers(); }, users: renderUsers, patterns: renderPatterns, content: renderContent, emails: renderEmails, inbox: renderInbox }[t])();
+}
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$("userSearch").oninput = e => { state.search = e.target.value; renderUsers(); };
+
+async function load() {
+  $("updated").textContent = "Loading...";
+  try { state.data = await api.core(); }
+  catch (e) { $("updated").textContent = ""; $("tab-overview").classList.remove("hide"); $("tab-overview").innerHTML = `<div class="panel"><h2>Could not load the data</h2><p class="err">${esc(e.message || e)}</p><p class="sub">If this is the first run, check that schema.sql has been run in the Supabase SQL Editor.</p></div>`; return; }
+  state.emailOf = {}; state.data.users.forEach(u => { if (u.email) state.emailOf[u.uid] = u.email; });
+  $("updated").textContent = "Updated " + new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  renderBadge(); showTab(state.tab);
+}
+$("refreshBtn").onclick = load;
+
+async function start() {
+  state.tab = (location.hash || "#overview").slice(1);
+  if (!["overview", "users", "patterns", "content", "emails", "inbox"].includes(state.tab)) state.tab = "overview";
+  if (DEMO) { $("demoBanner").classList.remove("hide"); $("signOutBtn").classList.add("hide"); $("appView").classList.remove("hide"); return load(); }
+  sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, { auth: { persistSession: true, detectSessionInUrl: true } });
+  const { data } = await sb.auth.getSession();
+  if (data.session) return enter(); else showLogin();
+  sb.auth.onAuthStateChange((ev, session) => { if (ev === "SIGNED_IN" && session && $("appView").classList.contains("hide")) enter(); });
+}
+function showLogin(msg) { $("appView").classList.add("hide"); $("loginView").classList.remove("hide"); if (msg) $("loginMsg").textContent = msg; }
+async function enter() {
+  if (!(await api.isAdmin())) { await sb.auth.signOut(); return showLogin("That account is not on the admin list."); }
+  $("loginView").classList.add("hide"); $("appView").classList.remove("hide"); load();
+}
+$("loginBtn").onclick = async () => {
+  const email = $("loginEmail").value.trim(), pw = $("loginPassword").value;
+  if (!email) return;
+  $("loginMsg").textContent = "Working...";
+  if (pw) {
+    const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+    if (error) $("loginMsg").textContent = error.message; else enter();
+  } else {
+    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
+    $("loginMsg").textContent = error ? error.message : "Check your email for the sign-in link.";
+  }
+};
+$("signOutBtn").onclick = async () => { await sb.auth.signOut(); location.reload(); };
+start();
+</script>
+</body>
+</html>
