@@ -318,7 +318,7 @@ const api = {
       rpc("dash_projects"),
       this.pageAll(() => sb.rpc("dash_user_weeks", { p_weeks: 8 })),
       sb.from("events_v").select("id,created_at,uid,email,event_type,meta,props,platform,app_version").not("event_type", "in", "(SESSION_HEARTBEAT,APP_BACKGROUNDED,APP_CLOSED)").order("created_at", { ascending: false }).limit(600).then(r => { if (r.error) throw r.error; return r.data; }),
-      sb.from("events_v").select("id,created_at,uid,email,meta,props").eq("event_type", "PROJECT_OPENED").order("created_at", { ascending: false }).limit(500).then(r => { if (r.error) throw r.error; return r.data; }),
+      sb.from("events_v").select("id,created_at,uid,email,meta,props").in("event_type", ["PROJECT_OPENED", "PROJECT_STATE"]).order("created_at", { ascending: false }).limit(800).then(r => { if (r.error) throw r.error; return r.data; }),
       sb.from("events_v").select("id,created_at,uid,email,meta").eq("event_type", "DONATE").order("created_at", { ascending: false }).limit(200).then(r => { if (r.error) throw r.error; return r.data; }),
       this.pageAll(() => sb.from("messages").select("*").order("created_at", { ascending: false })),
       this.pageAll(() => sb.from("email_list_v").select("*").order("added_at", { ascending: false })),
@@ -409,6 +409,7 @@ const EVENT_TEXT = {
   SESSION_START: ["📱", () => "opened the app"],
   PROJECT_OPENED: ["📂", e => "opened a project" + (e.props && e.props.grids ? ` with ${e.props.grids} grid${e.props.grids > 1 ? "s" : ""}` : "")],
   NEW_PROJECT: ["✨", e => "started a new project"],
+  PROJECT_STATE: ["🧩", e => ({ saved: "saved a project", "artwork added": "added artwork to a project", "grid removed": "removed a grid from a project" }[e.props && e.props.reason] || "changed a project") + (e.props && e.props.grids ? `, now ${e.props.grids} grid${e.props.grids > 1 ? "s" : ""}` : "")],
   ARTWORK_DOWNLOADED: ["⬇️", e => "downloaded " + (e.meta || "artwork")],
   CAST_STARTED: ["📡", () => "started casting"],
   CAST_STOPPED: ["📡", e => "stopped casting after " + mins((+e.meta || 0) / 60)],
@@ -435,7 +436,7 @@ function groupProjects(events) {
     const key = e.uid + "|" + ((e.props && e.props.project) || "art:" + String(e.meta || "").split(",").map(s => s.trim()).sort().join(","));
     let g = map.get(key);
     if (!g) { g = { uid: e.uid, latest: e, first: e.created_at, opens: 0 }; map.set(key, g); }
-    g.opens++;
+    if (e.event_type === "PROJECT_OPENED") g.opens++;
     if (e.created_at > g.latest.created_at) g.latest = e;
     if (e.created_at < g.first) g.first = e.created_at;
   });
@@ -443,9 +444,9 @@ function groupProjects(events) {
 }
 function projectFacts(p) {
   const x = p.latest.props || {};
-  return [x.grids ? `${x.grids} grid${x.grids > 1 ? "s" : ""}` : "", x.masks ? `${x.masks} mask${x.masks > 1 ? "s" : ""}` : "", x.warp ? "warp paint" : "", x.own_media ? `${x.own_media} own file${x.own_media > 1 ? "s" : ""}` : "", `opened ${p.opens}×`].filter(Boolean).join(" · ");
+  return [x.grids ? `${x.grids} grid${x.grids > 1 ? "s" : ""}` : "", x.masks ? `${x.masks} mask${x.masks > 1 ? "s" : ""}` : "", x.warp ? "warp paint" : "", x.own_media ? `${x.own_media} own file${x.own_media > 1 ? "s" : ""}` : "", p.opens ? `opened ${p.opens}×` : "new, not reopened yet"].filter(Boolean).join(" · ");
 }
-function eventLine(e) { const [icon, f] = EVENT_TEXT[e.event_type] || ["•", ev => ev.event_type.toLowerCase().replace(/_/g, " ")]; return { icon, text: f(e), extra: e.event_type === "PROJECT_OPENED" || e.event_type === "NEW_PROJECT" ? `<div class="arts">${artChips(e.meta)}</div>` : "" }; }
+function eventLine(e) { const [icon, f] = EVENT_TEXT[e.event_type] || ["•", ev => ev.event_type.toLowerCase().replace(/_/g, " ")]; return { icon, text: f(e), extra: ["PROJECT_OPENED", "NEW_PROJECT", "PROJECT_STATE"].includes(e.event_type) ? `<div class="arts">${artChips(e.meta)}</div>` : "" }; }
 
 /* ============================================================================================================
    State and rendering
@@ -506,7 +507,7 @@ function renderTrend() {
 const FEED_FILTERS = {
   all: ["All", () => true],
   opens: ["Opens", e => e.event_type === "SESSION_START"],
-  projects: ["Projects", e => ["PROJECT_OPENED", "NEW_PROJECT", "ARTWORK_DOWNLOADED"].includes(e.event_type)],
+  projects: ["Projects", e => ["PROJECT_OPENED", "PROJECT_STATE", "NEW_PROJECT", "ARTWORK_DOWNLOADED"].includes(e.event_type)],
   projecting: ["Projecting", e => e.event_type.startsWith("CAST_")],
   money: ["Support", e => e.event_type === "DONATE"],
 };
@@ -718,7 +719,7 @@ async function openUser(uid) {
   dr.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:12px"><div class="who"><div class="av" style="background:${w.color};width:40px;height:40px;font-size:16px">${esc(w.initial)}</div><div><h2>${esc(w.name)}</h2><div class="sub">${esc(idLine)}</div></div></div><button id="closeDrawer">Close</button></div>
     ${u ? `<div class="kpis" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">${kp.map(([l, v]) => `<div class="kpi" style="padding:10px"><div class="l">${esc(l)}</div><div class="v" style="font-size:18px">${esc(String(v))}</div></div>`).join("")}</div>` : ""}
     <div class="panel"><h3>When they use it</h3><div class="heat">${heatGrid(Object.values(heatCells), "sessions")}</div></div>
-    <div class="panel"><h3>Projects</h3>${groupProjects(d.events.filter(e => e.event_type === "PROJECT_OPENED")).map(p => `<div style="margin-bottom:12px"><div class="sub">${esc(projectFacts(p))} · last ${esc(dateTime(p.latest.created_at))}</div><div class="arts">${artChips(p.latest.meta, 24)}</div></div>`).join("") || `<div class="empty">No projects recorded yet.</div>`}</div>
+    <div class="panel"><h3>Projects</h3>${groupProjects(d.events.filter(e => e.event_type === "PROJECT_OPENED" || e.event_type === "PROJECT_STATE")).map(p => `<div style="margin-bottom:12px"><div class="sub">${esc(projectFacts(p))} · last ${esc(dateTime(p.latest.created_at))}</div><div class="arts">${artChips(p.latest.meta, 24)}</div></div>`).join("") || `<div class="empty">No projects recorded yet.</div>`}</div>
     <div class="panel"><h3>Sessions (${ss.length})</h3><div class="tw" style="max-height:320px;overflow-y:auto"><table><thead><tr><th>Started (their time)</th><th class="num">Length</th><th class="num">Projecting</th></tr></thead><tbody>
       ${ss.slice(0, 60).map(s => { const t = wall(s.local_start); return `<tr><td>${esc(t.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }))} ${esc(t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZone: "UTC" }))}</td><td class="num">${mins(s.seconds / 60)}</td><td class="num">${s.projection_seconds > 0 ? mins(s.projection_seconds / 60) : "-"}</td></tr>`; }).join("") || `<tr><td colspan="3" class="empty">No sessions recorded.</td></tr>`}
     </tbody></table></div></div>
