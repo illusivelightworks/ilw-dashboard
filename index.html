@@ -60,6 +60,8 @@
   .who .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
   .who .s { color: var(--muted); font-size: 11px; }
   .feed { display: flex; flex-direction: column; }
+  .feed.scroll { max-height: 380px; overflow-y: auto; padding-right: 4px; }
+  .feed .day { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding: 8px 2px 4px; z-index: 1; }
   .feed .it { display: flex; gap: 10px; align-items: center; padding: 8px 2px; border-bottom: 1px solid var(--line2); cursor: pointer; }
   .feed .it:hover { background: #122233; }
   .feed .ic { width: 26px; text-align: center; font-size: 16px; flex: none; }
@@ -149,8 +151,8 @@
           <div class="chart-box"><canvas id="trendChart"></canvas></div>
         </div>
         <div class="panel">
-          <div class="head"><div><h3>Live</h3><h2>Recent activity</h2></div></div>
-          <div class="feed" id="feed"></div>
+          <div class="head"><div><h3>Live</h3><h2>Recent activity</h2></div><div class="chips" id="feedChips"></div></div>
+          <div class="feed scroll" id="feed"></div>
         </div>
       </div>
       <div class="panel">
@@ -293,7 +295,7 @@ const api = {
       rpc("dash_combos"),
       rpc("dash_projects"),
       this.pageAll(() => sb.rpc("dash_user_weeks", { p_weeks: 8 })),
-      sb.from("events_v").select("id,created_at,uid,email,event_type,meta,props,platform,app_version").not("event_type", "in", "(SESSION_HEARTBEAT,APP_BACKGROUNDED,APP_CLOSED)").order("created_at", { ascending: false }).limit(300).then(r => { if (r.error) throw r.error; return r.data; }),
+      sb.from("events_v").select("id,created_at,uid,email,event_type,meta,props,platform,app_version").not("event_type", "in", "(SESSION_HEARTBEAT,APP_BACKGROUNDED,APP_CLOSED)").order("created_at", { ascending: false }).limit(600).then(r => { if (r.error) throw r.error; return r.data; }),
       sb.from("events_v").select("id,created_at,uid,email,meta").eq("event_type", "DONATE").order("created_at", { ascending: false }).limit(200).then(r => { if (r.error) throw r.error; return r.data; }),
       this.pageAll(() => sb.from("messages").select("*").order("created_at", { ascending: false })),
       this.pageAll(() => sb.from("email_list_v").select("*").order("added_at", { ascending: false })),
@@ -386,7 +388,7 @@ function eventLine(e) { const [icon, f] = EVENT_TEXT[e.event_type] || ["•", ev
 /* ============================================================================================================
    State and rendering
    ============================================================================================================ */
-const state = { emailOf: {}, data: null, tab: "overview", metric: "active_users", range: 30, filter: "all", sortKey: "last_seen", sortAsc: false, search: "", msgFilter: "new", showAllGigs: false, charts: {} };
+const state = { feedFilter: "all", emailOf: {}, data: null, tab: "overview", metric: "active_users", range: 30, filter: "all", sortKey: "last_seen", sortAsc: false, search: "", msgFilter: "new", showAllGigs: false, charts: {} };
 const METRICS = {
   active_users: ["Active users", "Active users per day", r => r.active_users],
   sessions: ["Sessions", "Sessions per day", r => r.sessions],
@@ -437,12 +439,29 @@ function renderTrend() {
   });
 }
 
+const FEED_FILTERS = {
+  all: ["All", () => true],
+  opens: ["Opens", e => e.event_type === "SESSION_START"],
+  projects: ["Projects", e => ["PROJECT_OPENED", "NEW_PROJECT", "ARTWORK_DOWNLOADED"].includes(e.event_type)],
+  projecting: ["Projecting", e => e.event_type.startsWith("CAST_")],
+  money: ["Support", e => e.event_type === "DONATE"],
+};
+function dayLabel(iso) {
+  const d = new Date(iso), t = new Date(); const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(t) - day(d)) / DAY);
+  return diff === 0 ? "Today" : diff === 1 ? "Yesterday" : d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+}
 function renderFeed() {
-  const items = state.data.events.slice(0, 22);
-  $("feed").innerHTML = items.length ? items.map(e => {
+  chip($("feedChips"), Object.entries(FEED_FILTERS).map(([k, v]) => [k, v[0]]), state.feedFilter, k => { state.feedFilter = k; renderFeed(); });
+  const items = state.data.events.filter(FEED_FILTERS[state.feedFilter][1]).slice(0, 300);
+  let last = "", html = "";
+  items.forEach(e => {
+    const dl = dayLabel(e.created_at);
+    if (dl !== last) { html += `<div class="day">${esc(dl)}</div>`; last = dl; }
     const l = eventLine(e); const w = who(e.uid);
-    return `<div class="it" data-uid="${esc(e.uid)}"><div class="ic">${l.icon}</div><div class="tx"><b>${esc(w.name)}</b> ${esc(l.text)}</div><div class="tm">${esc(ago(e.created_at))}</div></div>`;
-  }).join("") : `<div class="empty">No activity yet.</div>`;
+    html += `<div class="it" data-uid="${esc(e.uid)}"><div class="ic">${l.icon}</div><div class="tx"><b>${esc(w.name)}</b>${w.email && w.short ? ` <span class="sub">ID ${esc(w.short)}</span>` : ""} ${esc(l.text)}</div><div class="tm" title="${esc(new Date(e.created_at).toLocaleString())}">${esc(ago(e.created_at))}</div></div>`;
+  });
+  $("feed").innerHTML = html || `<div class="empty">No activity yet.</div>`;
   $("feed").querySelectorAll(".it").forEach(n => n.onclick = () => openUser(n.dataset.uid));
 }
 
