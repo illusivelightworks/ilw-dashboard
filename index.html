@@ -413,6 +413,7 @@ const EVENT_TEXT = {
   PROJECT_EXPORTED: ["📤", e => "exported a project"],
   PROJECT_STATE: ["🧩", e => ({ saved: "saved a project", "artwork added": "added artwork to a project", "grid removed": "removed a grid from a project" }[e.props && e.props.reason] || "changed a project") + (e.props && e.props.grids ? `, now ${e.props.grids} grid${e.props.grids > 1 ? "s" : ""}` : "")],
   ARTWORK_DOWNLOADED: ["⬇️", e => "downloaded " + (e.meta || "artwork")],
+  ONLINE_MEDIA_DOWNLOADED: ["⬇️", () => "downloaded an online video"],
   CAST_STARTED: ["📡", () => "started casting"],
   CAST_STOPPED: ["📡", e => "stopped casting after " + mins((+e.meta || 0) / 60)],
   DONATE: ["💛", e => "bought " + (e.meta || "a support tier")],
@@ -448,7 +449,13 @@ function projectFacts(p) {
   const x = p.latest.props || {};
   return [x.grids ? `${x.grids} grid${x.grids > 1 ? "s" : ""}` : "", x.masks ? `${x.masks} mask${x.masks > 1 ? "s" : ""}` : "", x.warp ? "warp paint" : "", x.own_media ? `${x.own_media} own file${x.own_media > 1 ? "s" : ""}` : "", p.opens ? `opened ${p.opens}×` : "new, not reopened yet"].filter(Boolean).join(" · ");
 }
-function eventLine(e) { const [icon, f] = EVENT_TEXT[e.event_type] || ["•", ev => ev.event_type.toLowerCase().replace(/_/g, " ")]; return { icon, text: f(e), extra: ["PROJECT_OPENED", "NEW_PROJECT", "PROJECT_STATE"].includes(e.event_type) ? `<div class="arts">${artChips(e.meta)}</div>` : "" }; }
+// The meta of an online download is "<source>:<id there>" ("pixabay:7529"): shown as a link to that video's page.
+const ONLINE_VIDEO_PAGE = { pixabay: id => `https://pixabay.com/videos/id-${id}/`, pexels: id => `https://www.pexels.com/video/${id}/` };
+function onlineVideoLink(meta) {
+  const m = /^(pixabay|pexels):(\d{1,12})$/.exec(String(meta || ""));
+  return m ? ` <a href="${ONLINE_VIDEO_PAGE[m[1]](m[2])}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${m[1]} ${m[2]}</a>` : esc(meta ? " " + meta : "");
+}
+function eventLine(e) { const [icon, f] = EVENT_TEXT[e.event_type] || ["•", ev => ev.event_type.toLowerCase().replace(/_/g, " ")]; return { icon, text: f(e), extra: ["PROJECT_OPENED", "NEW_PROJECT", "PROJECT_STATE"].includes(e.event_type) ? `<div class="arts">${artChips(e.meta)}</div>` : e.event_type === "ONLINE_MEDIA_DOWNLOADED" ? onlineVideoLink(e.meta) : "" }; }
 
 /* ============================================================================================================
    State and rendering
