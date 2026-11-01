@@ -30,6 +30,11 @@
   button:hover { border-color: var(--accent2); }
   button.on { background: var(--accent2); color: #04121d; border-color: var(--accent2); font-weight: 600; }
   button.ghost { background: none; }
+  .menu { position: relative; }
+  #menuBtn { font-size: 18px; line-height: 1; padding: 4px 11px 7px; }
+  .menu .pop { position: absolute; right: 0; top: calc(100% + 6px); min-width: 160px; z-index: 30; display: flex; flex-direction: column; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); }
+  .menu .pop button { border: none; background: none; color: var(--text); text-align: left; padding: 9px 10px; border-radius: 8px; font-size: 13px; }
+  .menu .pop button:hover { background: var(--panel2); }
   input, select { background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 9px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
   input:focus, select:focus { outline: none; border-color: var(--accent2); }
   nav.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
@@ -136,8 +141,13 @@
       </div>
       <div class="row">
         <button id="refreshBtn">Refresh</button>
-        <button id="passwordBtn" class="ghost">Set password</button>
-        <button id="signOutBtn" class="ghost">Sign out</button>
+        <div class="menu" id="menu">
+          <button id="menuBtn" class="ghost" aria-label="Menu" aria-haspopup="true" aria-expanded="false">&#8942;</button>
+          <div class="pop hide" id="menuPop" role="menu">
+            <button id="passwordBtn" role="menuitem">Set password</button>
+            <button id="signOutBtn" role="menuitem">Sign out</button>
+          </div>
+        </div>
       </div>
     </header>
     <div id="demoBanner" class="banner hide">Showing demo data. Add your Supabase URL and key to config.js to see your own.</div>
@@ -765,7 +775,7 @@ $("refreshBtn").onclick = load;
 async function start() {
   state.tab = (location.hash || "#overview").slice(1);
   if (!["overview", "users", "projects", "patterns", "content", "emails", "inbox"].includes(state.tab)) state.tab = "overview";
-  if (DEMO) { $("demoBanner").classList.remove("hide"); $("signOutBtn").classList.add("hide"); $("passwordBtn").classList.add("hide"); $("appView").classList.remove("hide"); return load(); }
+  if (DEMO) { $("demoBanner").classList.remove("hide"); $("menu").classList.add("hide"); $("appView").classList.remove("hide"); return load(); }
   sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, { auth: { persistSession: true, detectSessionInUrl: true } });
   const { data } = await sb.auth.getSession();
   if (data.session) return enter(); else showLogin();
@@ -799,6 +809,12 @@ $("pwSave").onclick = async () => {
   if (error) $("pwMsg").textContent = error.message;
   else { $("pwMsg").textContent = "Saved. Next time, enter your email and this password."; setTimeout(() => $("pwDialog").close(), 1500); }
 };
+// The little menu in the top corner (Set password, Sign out): opens on its button, closes on a choice, a click elsewhere or Escape.
+function setMenu(open) { $("menuPop").classList.toggle("hide", !open); $("menuBtn").setAttribute("aria-expanded", open ? "true" : "false"); }
+$("menuBtn").onclick = e => { e.stopPropagation(); setMenu($("menuPop").classList.contains("hide")); };
+$("menuPop").onclick = () => setMenu(false);
+document.addEventListener("click", () => setMenu(false));
+document.addEventListener("keydown", e => { if (e.key === "Escape") setMenu(false); });
 $("signOutBtn").onclick = async () => { await sb.auth.signOut(); location.reload(); };
 start();
 </script>
